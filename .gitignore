@@ -6,3 +6,17 @@
 notebooks/.ipynb_checkpoints/unzip-data-checkpoint.ipynb
 data/dna/.ipynb_checkpoints/test-checkpoint.txt
 data/Acropora_millepora_pacbio_mapped_reads.fasta.gz
+dna.floret
+euk_data/Acropora_hyacinthus_unclassified_reads_illumina_top_1.fasta.gz
+euk_data/Acropora_hyacinthus_unclassified_reads_illumina_top_1.txt
+euk_data/Acropora_millepora_unclassified_reads_illumina_top_1.fasta.gz
+euk_data/Acropora_millepora_unclassified_reads_illumina_top_1.txt
+euk_data/Acropora_millepora_unclassified_reads_pacbio_top.fasta.gz
+euk_data/Acropora_millepora_unclassified_reads_pacbio_top.txt
+euk_data/Aurelia_aurita_unclassified_reads_pacbio_top.fasta.gz
+euk_data/Aurelia_aurita_unclassified_reads_pacbio_top.txt
+euk_data/Conus_ventricosus_unclassified_reads_illumina_top_1.fasta.gz
+euk_data/Conus_ventricosus_unclassified_reads_illumina_top_1.txt
+.ipynb_checkpoints/README-checkpoint.md
+data/unziped.txt
+data/dna/test.txt
