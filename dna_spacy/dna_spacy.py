@@ -29,7 +29,8 @@ class DNAParser:
 
         Returns:
             doc (spaCy Doc container) => a doc container representation of the input sequence
-            to access the doc vector, you can use doc.vector
+                - to access the doc vector, you can use doc.vector
+                - to access the original sequence, you can use doc._.sequence
         """
         Doc.set_extension("sequence", default=False)
 
