@@ -38,7 +38,7 @@ pip install -r requirements.txt
 ```python
 from dna_spacy import dna_spacy as ds
 nlp = ds.DNA()
-doc = nlp(<INSERT DNA SEQUENCE>)
+doc = nlp("ACGGTCATCATAAAGGCAGTGATCGCACCCTCTGACAGACGTCATGTTAATA")
 print("Tokenized DNA:")
 print(doc)
 print("Original DNA:")
