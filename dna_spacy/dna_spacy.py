@@ -78,7 +78,7 @@ class KMerTokenizer:
     def __call__(self, dna):
         dna = dna.replace("N", '')
         self.untokenized = dna
-        kmers = []
+        kmers = [dna[0:0+self.kmer_size]]
         end = len(dna) - self.kmer_size + 1
         kmer_values = np.zeros(end, dtype=np.int64)
 
