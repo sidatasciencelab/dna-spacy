@@ -172,9 +172,22 @@ def create_average_windows(nlp: Language, name: str) -> Callable[[Doc], Doc]:
     """
     def average_windows(doc: Doc) -> Doc:
         doc.vector = mean(doc._.window_vectors, axis=0)
-        average_animal = mean([item['ANIMAL'] for item in doc._.window_cats])
-        average_bacteria = mean([item['BACTERIA'] for item in doc._.window_cats])
-        doc.cats = {'ANIMAL': average_animal, 'BACTERIA': average_bacteria}
+        # Initialize a dictionary to store the sum of each category
+        category_sums = {label: 0 for label in doc._.window_cats[0]}
+        # Initialize a dictionary to store the count of each category
+        category_counts = {label: 0 for label in doc._.window_cats[0]}
+
+        # Iterate through the window categories and sum up the values for each label
+        for item in doc._.window_cats:
+            for label, value in item.items():
+                category_sums[label] += value
+                category_counts[label] += 1
+
+        # Compute the average for each label
+        averages = {label: total / count for label, (total, count) in zip(category_sums.keys(), zip(category_sums.values(), category_counts.values()))}
+
+        # Assign the averages to the doc's categories
+        doc.cats = averages
         return doc
     return average_windows
 
