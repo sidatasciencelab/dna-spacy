@@ -2,98 +2,65 @@ import spacy
 from spacy.tokens import Doc, Token
 from spacy.language import Language
 
-import torch
-import torch.nn as nn
-import numpy as np
 import os
+import subprocess
 
-import srsly
-import requests
-import numpy as np
 from numpy import mean
+from typing import Callable
 
-from . import utils
 
 class KMerTokenizer:
-    name = "kmer_tokenizer"
+    """
+    Custom tokenizer for DNA sequences that tokenizes input DNA into k-mers.
 
-    def __init__(self, vocab=None, kmer_size=None, window_size=None):
+    Attributes:
+        name (str): The name of the tokenizer.
+        vocab (spacy.vocab.Vocab, optional): The vocabulary object used to link words and their attributes.
+        kmer_size (int, optional): The size of the k-mers to be used for tokenizing the DNA sequences.
+        window_size (int, optional): The size of the window for segmenting the tokenized DNA into fixed-length sentences.
+        local_model (str, optional): Path to a local pre-trained model to be used for the transformer. If None, the model will be loaded from a predefined URL.
+
+    Methods:
+        download_model(): Downloads the transformer model if not already present.
+        load_model(): Loads the transformer model either from the local model or the predefined URL.
+        __call__(dna: str) -> spacy.tokens.Doc: Tokenizes the input DNA sequence into k-mers and returns a SpaCy Doc object with the tokenized sequence.
+
+    Example:
+        kmer_tokenizer = KMerTokenizer(vocab=nlp.vocab, kmer_size=5)
+        dna_sequence = "ATGGCC"
+        doc = kmer_tokenizer(dna_sequence)
+        # doc now contains the tokenized DNA sequence
+    """
+    name = "kmer_tokenizer"
+    def __init__(self, vocab=None, kmer_size=None, window_size=None, local_model=None):
         self.vocab = vocab
         self.kmer_size = kmer_size
         self.window_size = window_size
-        self.letter_dict = {"A": 1, "C": 2, "G": 3, "T": 4}
-        self.model_path = f"kmer_{self.kmer_size:02}_window_{self.window_size:02}.pth"
-        if not os.path.exists(self.model_path):
-            self.download_model(self.model_path)
-        self.transformer, self.device = self.load_model(self.model_path)
         self.untokenized = ""
 
-    def download_model(self, model_path):
-        print(f"Downloading: {model_path}. This may take a few moments.")
-        # Define the URL of the file
-        url = f"https://huggingface.co/wjbmattingly/dna-transformer-kmer-07-window-14/resolve/main/kmer_{self.kmer_size:02}_window_{self.window_size:02}"
+        if local_model:
+            self.transformer = spacy.load(local_model)
+        else:
+            self.model_path = f"en_dna_kmer_{self.kmer_size:02}5_window_{self.window_size:02}"
+            self.model_url = ""
+            self.transformer = self.load_model()
 
-        # Send a GET request to the URL
-        response = requests.get(url)
+    def download_model(self):
+        # Check if the model exists
+        if not os.path.exists(self.model_path):
+            # Download the model using pip
+            subprocess.run(["pip", "install", self.model_url])
 
-        # Make sure the request was successful
-        response.raise_for_status()
-
-        # Write the content of the response to a file
-        with open(model_path, "wb") as f:
-            f.write(response.content)
-
-    def load_model(self, path_to_saved_model):
-        # Load the saved state
-        checkpoint = torch.load(path_to_saved_model)
-        
-        # Set the checkpoint values as attributes of self
-        self.src_vocab_size = checkpoint['src_vocab_size']
-        self.tgt_vocab_size = checkpoint['tgt_vocab_size']
-        self.d_model = checkpoint['d_model']
-        self.num_heads = checkpoint['num_heads']
-        self.num_layers = checkpoint['num_layers']
-        self.d_ff = checkpoint['d_ff']
-        self.max_seq_length = checkpoint['max_seq_length']
-        self.dropout = checkpoint['dropout']
-
-        # Initialize the model
-        model = utils.Transformer(
-            src_vocab_size=checkpoint['src_vocab_size'],
-            tgt_vocab_size=checkpoint['tgt_vocab_size'],
-            d_model=checkpoint['d_model'],
-            num_heads=checkpoint['num_heads'],
-            num_layers=checkpoint['num_layers'],
-            d_ff=checkpoint['d_ff'],
-            max_seq_length=checkpoint['max_seq_length'],
-            dropout=checkpoint['dropout']
-        )
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        model.to(device)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.eval()  # Set to evaluation mode
-
-        return model, device
+    def load_model(self):
+        # download_model()
+        trf_nlp = spacy.load(self.model_path)
+        return trf_nlp
 
     def __call__(self, dna):
-        dna = dna.replace("N", '')
         self.untokenized = dna
         kmers = [dna[0:0+self.kmer_size]]
         end = len(dna) - self.kmer_size + 1
-        kmer_values = np.zeros(end, dtype=np.int64)
-
-        # Compute the initial k-mer
-        kmer_value = np.int64(0)
-        for i in range(self.kmer_size):
-            kmer_value = kmer_value * np.int64(4) + np.int64(self.letter_dict[dna[i]])
-
-        kmer_values[0] = kmer_value
-
         for i in range(1, end): 
-            # Shift the previous kmer_value left by two (equivalent to multiplying by 4), 
-            # and add the value of the new letter at the end
-            kmer_value = kmer_value * np.int64(4) - np.int64(self.letter_dict[dna[i-1]]) * np.int64(4) ** self.kmer_size + np.int64(self.letter_dict[dna[i+self.kmer_size-1]])
-            kmer_values[i] = kmer_value
             kmers.append(dna[i:i+self.kmer_size])
 
         spaces = [True] * len(kmers)  # There are no spaces between k-mers.
@@ -101,141 +68,156 @@ class KMerTokenizer:
         # Create the Doc object
         doc = Doc(self.vocab, words=kmers, spaces=spaces)
 
-        for idx, token in enumerate(doc):
-            token._.numerical_value = kmer_values[idx]
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         # store the transformer in the doc
         doc._.transformer = self.transformer
-        doc._.transformer.device = device
         doc._.untokenized = self.untokenized
         return doc
 
-    def _get_config(self):
-        return {
-            'kmer_size': self.kmer_size,
-            'window_size': self.window_size,
-        }
-
-    def _set_config(self, cfg):
-        self.kmer_size = cfg['kmer_size']
-        self.window_size = cfg['window_size']
-    import os
-
-    def to_disk(self, path, **kwargs):
-        data = {
-            'vocab': self.vocab.to_bytes()
-        }
-        srsly.write_msgpack(path, data)
-        
-        # Get the directory of the tokenizer file
-        dir_path = os.path.dirname(path)
-        
-        # Create the directory if it doesn't exist
-        os.makedirs(dir_path, exist_ok=True)
-
-        transformer_file_path = os.path.join(dir_path, "kmer_07_window_14_epoch_01.pth")
-            
-        torch.save({
-                'model_state_dict': self.transformer.state_dict(),
-                'src_vocab_size': self.src_vocab_size,
-                'tgt_vocab_size': self.tgt_vocab_size,
-                'd_model': self.d_model,
-                'num_heads': self.num_heads,
-                'num_layers': self.num_layers,
-                'd_ff': self.d_ff,
-                'max_seq_length': self.max_seq_length,
-                'dropout': self.dropout,
-            }, transformer_file_path)
-        tokenizer_path = os.path.join(dir_path, "tokenizer")
-        # self.nlp.tokenizer.to_disk(tokenizer_path)
-
-
-    def from_disk(self, path, **kwargs):
-        data = srsly.read_msgpack(path)
-        self.vocab = self.vocab.from_bytes(data['vocab'])
-
-        # Get the directory of the tokenizer file
-        dir_path = os.path.dirname(path)
-        transformer_file_path = os.path.join(dir_path, "kmer_{self.kmer_size:02}_window_{self.window_size:02}.pth")
-
-        # Load the transformer model
-        checkpoint = torch.load(transformer_file_path)
-        self.transformer.load_state_dict(checkpoint['model_state_dict'])
-        
-        # Load the other model parameters
-        self.src_vocab_size = checkpoint['src_vocab_size']
-        self.tgt_vocab_size = checkpoint['tgt_vocab_size']
-        self.d_model = checkpoint['d_model']
-        self.num_heads = checkpoint['num_heads']
-        self.num_layers = checkpoint['num_layers']
-        self.d_ff = checkpoint['d_ff']
-        self.max_seq_length = checkpoint['max_seq_length']
-        self.dropout = checkpoint['dropout']
-        tokenizer_path = os.path.join(dir_path, "tokenizer")
-        # self.nlp.tokenizer.from_disk(tokenizer_path)
-
-        return self
-
-
-
-
-from typing import Callable
-
 @Language.factory("fixed_length_sentencizer")
 def create_fixed_length_sentencizer(nlp: Language, name: str) -> Callable[[Doc], Doc]:
+    """
+    SpaCy pipeline component factory to create a function that segments a tokenized DNA sequence into fixed-length windows or sentences.
+
+    This factory function returns a component that takes the tokenized DNA sequence from the Doc object and segments it into fixed-length windows based on the `window_size` custom attribute. 
+    The resulting windows are stored in the custom attribute `windows` of the Doc object.
+
+    Parameters:
+        nlp (spacy.language.Language): The current nlp object, containing the language data and pipeline.
+        name (str): The unique name for this component instance.
+
+    Returns:
+        Callable[[Doc], Doc]: The function that takes a SpaCy Doc object and returns it after segmenting it into fixed-length windows.
+
+    Example:
+        # Assuming the pipeline has tokenized the DNA sequence
+        doc = nlp("ATGGCC")
+        fixed_length_sentencizer = create_fixed_length_sentencizer(nlp, "fixed_length_sentencizer")
+        fixed_length_sentencizer(doc)
+        # doc._.windows now contains the fixed-length windows of the DNA sequence
+    """
+
     def fixed_length_sentencizer(doc: Doc) -> Doc:
         window_size = doc._.get('window_size')
         windows = []
         doc_length = len(doc)
         for i in range(0, doc_length-window_size+1, window_size):
             windows.append(doc[i:i+window_size])
-        if len(doc)//window_size != 0:
+        if len(doc) // window_size != 0:
             windows.append(doc[-window_size:])
         doc._.windows = windows
         if len(windows) == 0:
             print("Window Size is too small.")
-
-        windows_int = []
-        for window in windows:
-            windows_int.append(np.array([w._.numerical_value for w in window]))
-        doc._.windows_int = windows_int
         return doc
+
     return fixed_length_sentencizer
+
 
 @Language.factory("windows2vec")
 def create_windows2vec(nlp: Language, name: str) -> Callable[[Doc], Doc]:
+    """
+    SpaCy pipeline component factory to create a function that applies a transformer to the windows of a tokenized DNA sequence.
+
+    This factory function returns a component that takes the windows from the Doc's custom attributes and applies the stored transformer to each window,
+    obtaining vectors and categories. The resulting vectors and categories are stored in the custom attributes `window_vectors` and `window_cats` of the Doc object.
+
+    Parameters:
+        nlp (spacy.language.Language): The current nlp object, containing the language data and pipeline.
+        name (str): The unique name for this component instance.
+
+    Returns:
+        Callable[[Doc], Doc]: The function that takes a SpaCy Doc object and returns it after applying the transformer to the windows.
+
+    Example:
+        # Assuming the pipeline has already processed the windows
+        doc = nlp("ATGGCC")
+        windows2vec = create_windows2vec(nlp, "windows2vec")
+        windows2vec(doc)
+        # doc._.window_vectors and doc._.window_cats now contain the transformed values
+    """
+
     def windows2vec(doc: Doc) -> Doc:
         vectors = []
+        cats = []
         for window in doc._.windows:
-            # Convert window to a tensor of token numerical values
-            window_values = torch.tensor([token._.numerical_value for token in window]).unsqueeze(0).to(doc._.device)
-            # Encode the window tensor
-            vectors.append(doc._.transformer.encode(window_values)[0])
+            trf_doc = doc._.transformer(window.text)
+            vectors.append(trf_doc._.trf_data.tensors[1])
+            cats.append(trf_doc.cats)
         doc._.window_vectors = vectors
+        doc._.window_cats = cats
         return doc
+
     return windows2vec
+
 
 @Language.factory("average_windows")
 def create_average_windows(nlp: Language, name: str) -> Callable[[Doc], Doc]:
+    """
+    SpaCy pipeline component factory to create a function that averages the window vectors and categories within a DNA sequence.
+
+    This component takes the window vectors and categories (e.g., 'ANIMAL', 'BACTERIA') from the Doc's custom attributes and computes their averages. 
+    The resulting averages are then stored in the `vector` and `cats` attributes of the Doc object.
+
+    Parameters:
+        nlp (spacy.language.Language): The current nlp object, containing the language data and pipeline.
+        name (str): The unique name for this component instance.
+
+    Returns:
+        Callable[[Doc], Doc]: The function that takes a SpaCy Doc object and returns it after computing and setting the average vectors and categories.
+
+    Example:
+        # Assuming the pipeline has already processed window vectors and categories
+        doc = nlp("ATGGCC")
+        average_windows(doc)
+        # doc.vector and doc.cats now contain the averaged values
+    """
     def average_windows(doc: Doc) -> Doc:
         doc.vector = mean(doc._.window_vectors, axis=0)
+        average_animal = mean([item['ANIMAL'] for item in doc._.window_cats])
+        average_bacteria = mean([item['BACTERIA'] for item in doc._.window_cats])
+        doc.cats = {'ANIMAL': average_animal, 'BACTERIA': average_bacteria}
         return doc
     return average_windows
 
-def DNA(kmer_size=7, window_size=14):
+
+
+def DNA(kmer_size=7, window_size=10, local_model=None):
+    """
+    Creates a custom SpaCy NLP pipeline to process DNA sequences by dividing them into k-mers and applying various transformations.
+
+    Parameters:
+        kmer_size (int, optional): The size of the k-mer (substring of length k) to be used for tokenizing the DNA sequences. Default is 7.
+        window_size (int, optional): The size of the window for segmenting the tokenized DNA into fixed-length sentences. Default is 10.
+        local_model (str, optional): Path to a local pre-trained model to be used for the transformer. If None, the model will be loaded from a predefined URL.
+
+    Returns:
+        nlp (spacy.language.Language): A SpaCy Language object configured with the custom tokenizer and pipeline for processing DNA sequences.
+
+    The resulting pipeline includes:
+        1. KMerTokenizer: Custom tokenizer that breaks the DNA into k-mers.
+        2. Fixed-length Sentencizer: Divides the tokenized DNA into fixed-length windows.
+        3. Windows2Vec: Applies a transformer to the windows to obtain vectors and categories.
+        4. Average Windows: Averages the vectors and categories across the windows.
+
+    Custom extensions are also added to the SpaCy Doc object to store intermediate results like untokenized DNA, window size, windows, transformer, window vectors, and window categories.
+
+    Example:
+        nlp = DNA(kmer_size=5, window_size=20)
+        doc = nlp("GGCCAGGGGGCCGTTGTCCTCGGGGAACTGGCGGGCGCGCAGGTCGATCACGTCGCCGATGCGCTTGACCGCGGCCGAGCGCATGTCGGAGGTGAACTGGCTGTCGCGGAAGACGGTCAGCCCCTCCTTGAGGCAGAGCTGGAACCAATC")
+        # Processed DNA sequence with custom transformations
+    """
     nlp = spacy.blank("en")
     
     # Add custom attributes
     Doc.set_extension('untokenized', default=window_size, force=True)
     Doc.set_extension('window_size', default=window_size, force=True)
     Doc.set_extension('windows', default={}, force=True)
-    Doc.set_extension('windows_int', default={}, force=True)
     Doc.set_extension('transformer', default=None, force=True)
-    Token.set_extension("numerical_value", default=None, force=True)
-    Doc.set_extension("window_vectors", default=None, force=True)
-    Doc.set_extension("device", default=None, force=True)
 
-    nlp.tokenizer = KMerTokenizer(nlp.vocab, kmer_size, window_size)
+    Doc.set_extension("window_vectors", default=None, force=True)
+    Doc.set_extension("window_cats", default=None, force=True)
+
+
+    nlp.tokenizer = KMerTokenizer(nlp.vocab, kmer_size, window_size, local_model)
 
     nlp.add_pipe("fixed_length_sentencizer", first=True)
     nlp.add_pipe("windows2vec")
