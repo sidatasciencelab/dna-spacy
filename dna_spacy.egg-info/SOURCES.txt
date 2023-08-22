@@ -1,0 +1,10 @@
+README.md
+setup.py
+dna_spacy/__init__.py
+dna_spacy/dna_spacy.py
+dna_spacy.egg-info/PKG-INFO
+dna_spacy.egg-info/SOURCES.txt
+dna_spacy.egg-info/dependency_links.txt
+dna_spacy.egg-info/requires.txt
+dna_spacy.egg-info/top_level.txt
+dna_spacy/configs/trf_config_base.cfg

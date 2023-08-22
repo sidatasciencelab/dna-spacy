@@ -1,0 +1,9 @@
+build_corpus:
+  cmd: python -m spacy run build_corpus
+  script:
+    - python scripts/build_corpus.py --input_path assets/fasta/*/*.fasta --output_path
+      corpus/corpus.txt --sample_size 10 --kmer_size 7 --window_size 10
+  deps: []
+  outs: []
+  spacy_version: 3.6.1
+  spacy_git_version: 458bc5f45

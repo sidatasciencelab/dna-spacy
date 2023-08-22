@@ -1,8 +1,11 @@
 import spacy
 from spacy.tokens import Doc, Token
 from spacy.language import Language
+from spacy.util import load_config
+from spacy.lang.en import English
 
 import os
+from pathlib import Path
 import subprocess
 
 from numpy import mean
@@ -19,6 +22,7 @@ class KMerTokenizer:
         kmer_size (int, optional): The size of the k-mers to be used for tokenizing the DNA sequences.
         window_size (int, optional): The size of the window for segmenting the tokenized DNA into fixed-length sentences.
         local_model (str, optional): Path to a local pre-trained model to be used for the transformer. If None, the model will be loaded from a predefined URL.
+        hf_model_path (str, optional): Path to another HuggingFace DNA model.
 
     Methods:
         download_model(): Downloads the transformer model if not already present.
@@ -32,7 +36,7 @@ class KMerTokenizer:
         # doc now contains the tokenized DNA sequence
     """
     name = "kmer_tokenizer"
-    def __init__(self, vocab=None, kmer_size=None, window_size=None, local_model=None):
+    def __init__(self, vocab=None, kmer_size=None, window_size=None, local_model=None, hf_model_path=None):
         self.vocab = vocab
         self.kmer_size = kmer_size
         self.window_size = window_size
@@ -41,19 +45,30 @@ class KMerTokenizer:
         if local_model:
             self.transformer = spacy.load(local_model)
         else:
-            self.model_path = f"en_dna_kmer_{self.kmer_size:02}5_window_{self.window_size:02}"
-            self.model_url = ""
+            if hf_model_path == None:
+                self.model_path = f"wjbmattingly/dnaBERT-k{self.kmer_size:02}-w{self.window_size:02}"
+            else:
+                self.model_path = hf_model_path
             self.transformer = self.load_model()
 
-    def download_model(self):
-        # Check if the model exists
-        if not os.path.exists(self.model_path):
-            # Download the model using pip
-            subprocess.run(["pip", "install", self.model_url])
-
     def load_model(self):
-        # download_model()
-        trf_nlp = spacy.load(self.model_path)
+        available_models = '\n'.join([
+            "wjbmattingly/dnaBERT-k07-w10"
+        ])
+        # Determine the directory containing the dna_spacy file.
+        base_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+
+        # Construct the path to the config file relative to dna_spacy's location.
+        config_path = base_dir / "configs" / "trf_config_base.cfg"
+        config = load_config(config_path)
+        config['components']['transformer']['model']['name'] = self.model_path
+        trf_nlp = English.from_config(config)
+        try:
+            trf_nlp.initialize()
+        except:
+            OSError
+            print(f"Model not available. Please select from the following list:\n{available_models}")
+
         return trf_nlp
 
     def __call__(self, dna):
@@ -193,7 +208,7 @@ def create_average_windows(nlp: Language, name: str) -> Callable[[Doc], Doc]:
 
 
 
-def DNA(kmer_size=7, window_size=10, local_model=None):
+def DNA(kmer_size=7, window_size=10, local_model=None, hf_model_path=None):
     """
     Creates a custom SpaCy NLP pipeline to process DNA sequences by dividing them into k-mers and applying various transformations.
 
@@ -230,7 +245,7 @@ def DNA(kmer_size=7, window_size=10, local_model=None):
     Doc.set_extension("window_cats", default=None, force=True)
 
 
-    nlp.tokenizer = KMerTokenizer(nlp.vocab, kmer_size, window_size, local_model)
+    nlp.tokenizer = KMerTokenizer(nlp.vocab, kmer_size, window_size, local_model, hf_model_path)
 
     nlp.add_pipe("fixed_length_sentencizer", first=True)
     nlp.add_pipe("windows2vec")
